@@ -1,0 +1,484 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#15120e"><meta name="apple-mobile-web-app-capable" content="yes"><style>body{margin:0}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body>
+<title>Tianxia Formation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@400;700&family=Alegreya+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: one-hand portrait column — status strip, play surface (map / formation / battle), action bar */
+:root{
+  --ink:#15120e; --lacquer:#221c16; --raise:#2c251d; --line:#41372b;
+  --paper:#ece2cb; --muted:#a6987d; --seal:#c4432b; --gold:#cfa851; --jade:#73a58c;
+  --display:'Alegreya SC',Georgia,serif;
+  --body:'Alegreya Sans',system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent}
+#app{max-width:480px;margin:0 auto;padding-inline:16px;padding-block:12px 28px;display:flex;flex-direction:column;gap:12px}
+h1,h2,h3{font-family:var(--display);font-weight:400;margin:0;text-wrap:balance}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--raise);padding:10px 14px;border-radius:4px;min-height:44px}
+.btn.primary{background:var(--seal);border-color:var(--seal);color:var(--paper);font-family:var(--display);font-size:1.1rem;letter-spacing:.08em}
+.btn:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1}
+.muted{color:var(--muted)}
+.label{font-size:.72rem;letter-spacing:.14em;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+
+/* title */
+.title{display:flex;flex-direction:column;gap:20px;padding-block:8vh 0}
+.title h1{font-size:3.4rem;line-height:1;letter-spacing:.06em}
+.title h1 span{color:var(--seal)}
+.seal{display:inline-grid;place-items:center;width:52px;height:52px;border:2px solid var(--seal);color:var(--seal);font-family:var(--display);font-size:1.5rem;transform:rotate(-4deg)}
+.title p{margin:0;max-width:32ch}
+.field{display:flex;flex-direction:column;gap:6px}
+.field input{background:var(--lacquer);border:1px solid var(--line);color:var(--paper);padding:12px;border-radius:4px;font:inherit;font-size:1.1rem}
+
+/* status strip */
+.status{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.status .who{font-family:var(--display);font-size:1.25rem}
+.chip{font-size:.85rem;color:var(--muted)}
+.chip b{color:var(--paper);font-weight:400}
+.food{color:var(--seal);letter-spacing:.1em}
+
+/* map */
+.map{position:relative;width:100%;aspect-ratio:3/4;max-width:100%;border:1px solid var(--line);border-radius:4px;overflow:hidden;
+  background:radial-gradient(120% 80% at 50% 0%,#2a2219 0%,transparent 60%),radial-gradient(90% 60% at 20% 100%,#1d2a22 0%,transparent 70%),var(--lacquer)}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+.map line{stroke:var(--line);stroke-width:.5}
+.map line.lit{stroke:var(--gold);stroke-dasharray:1.2 1}
+.node{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;padding:4px;min-width:44px;min-height:44px}
+.node .pin{width:22px;height:22px;border:1.5px solid var(--line);background:var(--ink);transform:rotate(45deg)}
+.node .nm{font-family:var(--display);font-size:.9rem;white-space:nowrap}
+.node .tr{font-size:.65rem;color:var(--muted)}
+.node.own .pin{background:var(--gold);border-color:var(--gold)}
+.node.open .pin{border-color:var(--seal);background:#3a1912;animation:pulse 1.6s ease-in-out infinite}
+.node.lock{opacity:.45}
+.node.boss .pin{width:28px;height:28px}
+@keyframes pulse{50%{box-shadow:0 0 0 6px rgba(196,67,43,.25)}}
+.hint{font-size:.88rem;border-left:2px solid var(--gold);padding:6px 10px;background:var(--lacquer)}
+
+/* grids & tiles */
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.cell{aspect-ratio:1;border-radius:4px;border:1px dashed var(--line);background:transparent;padding:0;position:relative;min-width:0}
+.cell.off{border:0;background:repeating-linear-gradient(45deg,transparent 0 6px,rgba(65,55,43,.5) 6px 7px)}
+.cell.target{border-color:var(--gold);border-style:solid}
+.tile{position:absolute;inset:0;border-radius:4px;background:var(--raise);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;overflow:hidden}
+.tile .nm{font-family:var(--display);font-size:.82rem;line-height:1.05;text-align:center;padding-inline:3px}
+.tile .cl{position:absolute;top:3px;left:5px;font-size:.62rem;color:var(--muted)}
+.tile .rk{position:absolute;top:3px;right:5px;font-size:.62rem;color:var(--gold)}
+.tile .st{font-size:.66rem;color:var(--muted)}
+.tile .st b{color:var(--paper);font-weight:400}
+.tile.p{border-color:#3d5a4c}
+.tile.e{border-color:#5c2a20}
+.tile.hero{border-color:var(--gold)}
+.tile.sel{outline:2px solid var(--gold);outline-offset:1px}
+.tile.buff .st b{color:var(--jade)}
+.tile .hp{position:absolute;left:4px;right:4px;bottom:4px;height:3px;background:var(--ink)}
+.tile .hp i{display:block;height:100%;background:var(--jade);transition:width .25s}
+.tile.e .hp i{background:var(--seal)}
+.tile.dead{opacity:.18;filter:grayscale(1)}
+.tile.act{transform:scale(1.08);z-index:2;box-shadow:0 0 0 2px var(--gold)}
+.tile.hit{animation:shake .25s}
+@keyframes shake{30%{transform:translateX(-3px)}70%{transform:translateX(3px)}}
+.dmg{position:absolute;top:30%;left:50%;transform:translateX(-50%);font-family:var(--display);color:var(--seal);font-size:1.1rem;pointer-events:none;animation:rise .7s forwards;text-shadow:0 1px 0 var(--ink)}
+.dmg.fire{color:var(--gold)}
+@keyframes rise{to{transform:translate(-50%,-26px);opacity:0}}
+.side-label{display:flex;justify-content:space-between;align-items:baseline}
+.front-mark{font-size:.7rem;color:var(--muted);text-align:center;letter-spacing:.2em}
+
+.bench{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.bench .cell{border-style:solid}
+.syn{display:flex;flex-wrap:wrap;gap:6px}
+.syn span{font-size:.8rem;border:1px solid var(--line);padding:3px 8px;border-radius:999px;background:var(--lacquer)}
+.syn span b{color:var(--gold);font-weight:400;font-family:var(--display)}
+.bdg{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-size:.6rem;padding:0 4px;border-radius:2px;z-index:3;pointer-events:none;white-space:nowrap}
+.bdg.up{background:var(--jade);color:var(--ink)}.bdg.dn{background:var(--seal);color:var(--paper)}
+.info{background:var(--lacquer);border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-size:.88rem;min-height:3.2em}
+.info h3{font-size:1.1rem}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;padding:8px;min-height:40px;font-family:var(--display)}
+.seg button.on{background:var(--raise);color:var(--gold)}
+
+.log{font-size:.85rem;color:var(--muted);min-height:1.5em;text-align:center}
+.vs{display:flex;flex-direction:column;gap:8px}
+
+/* sheet */
+.sheet{position:fixed;inset:0;background:rgba(10,8,6,.72);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+.sheet .panel{background:var(--lacquer);border-top:1px solid var(--line);width:100%;max-width:480px;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;border-radius:10px 10px 0 0;max-height:88vh;overflow:auto}
+.sheet h2{font-size:1.6rem}
+.picks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.picks .btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}
+.picks .btn b{font-family:var(--display);font-weight:400;font-size:1.1rem}
+.list{display:flex;flex-direction:column;gap:8px}
+.gen{display:grid;grid-template-columns:56px 1fr auto;gap:10px;align-items:center;background:var(--lacquer);border:1px solid var(--line);border-radius:4px;padding:8px}
+.gen .cell{border:0}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--paper);color:var(--ink);padding:8px 14px;border-radius:4px;font-size:.9rem;z-index:20;max-width:90%}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div id="app"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const CLS={보:'Infantry',기:'Cavalry',궁:'Archer',책:'Strategist'};
+const EN={유비:'Liu Bei',관우:'Guan Yu',장비:'Zhang Fei',조운:'Zhao Yun',마초:'Ma Chao',황충:'Huang Zhong',제갈량:'Zhuge Liang',곽가:'Guo Jia',요화:'Liao Hua',주창:'Zhou Cang',초선:'Diaochan',여포:'Lu Bu',진도:'Chen Dao',
+ 황건병:'Yellow Turban',궁수:'Archer',기마병:'Horseman',방패병:'Shieldman',요술사:'Sorcerer',장각:'Zhang Jiao',하후돈:'Xiahou Dun',허저:'Xu Chu',이각:'Li Jue',화웅:'Hua Xiong',동탁:'Dong Zhuo'};
+const nm=id=>EN[id]||id;
+const FN={어린진:'Fish Scale',학익진:'Crane Wing'};
+
+// ---------- data ----------
+const DEFS={
+  유비:{c:'보',atk:7,hp:62,spd:4,int:5},
+  관우:{c:'보',atk:11,hp:72,spd:4,int:4},
+  장비:{c:'보',atk:12,hp:66,spd:3,int:2},
+  조운:{c:'기',atk:10,hp:60,spd:7,int:4},
+  마초:{c:'기',atk:12,hp:58,spd:7,int:2},
+  황충:{c:'궁',atk:9,hp:46,spd:5,int:3},
+  제갈량:{c:'책',atk:2,hp:42,spd:5,int:12},
+  곽가:{c:'책',atk:2,hp:38,spd:6,int:10},
+  요화:{c:'보',atk:5,hp:52,spd:4,int:2},
+  진도:{c:'궁',atk:6,hp:40,spd:5,int:2},
+  주창:{c:'보',atk:6,hp:80,spd:3,int:1},
+  초선:{c:'책',atk:2,hp:36,spd:6,int:7},
+  여포:{c:'기',atk:17,hp:84,spd:8,int:2},
+};
+const HINT={
+  hero:'Your hero. Adjacent officers get +10% attack. With Intellect 8+, casts schemes from the back rows.',
+  유비:'Benevolence: allies in the 8 surrounding cells get +15% HP. Next to Guan Yu and Zhang Fei: Peach Garden Oath.',
+  관우:'Duelist: +50% damage to named enemy officers. Stronger next to his sworn brothers.',
+  장비:'Stronger next to his sworn brothers. Fielded with Lu Bu, both are weakened.',
+  조운:'Cavalry: charges from the second row. Next to Liu Bei: +40% HP (Changban).',
+  마초:'Cavalry: charges from the second row. One of the Five Tiger Generals.',
+  황충:'Archer: snipes the weakest enemy. In the back row: +30% attack.',
+  제갈량:'Strategist: fire attack on the whole enemy front row. In the back row: whole army +15% attack (Sleeping Dragon).',
+  곽가:'Strategist: fire attack on the enemy front row. In the back row: +25% attack to his column.',
+  요화:'Vanguard: on an end cell of the front row, +3 speed. Strikes first.',
+  진도:'Archer. Cover: allies ahead of him in his column get +20% HP. Strong against infantry.',
+  주창:'Sturdy infantry. Next to Guan Yu, guards him (+30% HP).',
+  초선:'Strategist. Next to Lu Bu: Chain Scheme, Lu Bu +50% attack.',
+  여포:'The mightiest cavalry. Next to Diaochan: +50% attack. Sworn enemy of Zhang Fei.',
+};
+const ENEMY={
+  황건병:{c:'보',atk:6,hp:40,spd:3},
+  궁수:{c:'궁',atk:5,hp:28,spd:4},
+  기마병:{c:'기',atk:8,hp:46,spd:6},
+  방패병:{c:'보',atk:4,hp:74,spd:2},
+  요술사:{c:'책',atk:1,hp:26,spd:3,int:8},
+  장각:{c:'책',atk:2,hp:70,spd:4,int:12,named:1},
+  하후돈:{c:'보',atk:13,hp:90,spd:4,named:1},
+  허저:{c:'보',atk:14,hp:105,spd:3,named:1},
+  이각:{c:'기',atk:11,hp:70,spd:6,named:1},
+  화웅:{c:'보',atk:15,hp:100,spd:4,named:1},
+  여포:{c:'기',atk:20,hp:150,spd:8,named:1},
+  동탁:{c:"보",atk:11,hp:150,spd:2,named:1},
+};
+const NODES=[
+  {id:0,n:'Pingyuan',x:18,y:90,t:0,e:[]},
+  {id:1,n:'Beihai',x:62,y:86,t:1,e:['황건병','황건병','궁수','황건병'],r:{g:'장비'}},
+  {id:2,n:'Xiaopei',x:20,y:71,t:1,e:['방패병','황건병','궁수','궁수'],r:{gold:30}},
+  {id:3,n:'Xuzhou',x:55,y:67,t:2,e:['황건병','황건병','기마병','궁수','요술사'],r:{g:'조운'}},
+  {id:4,n:'Xinye',x:16,y:51,t:2,e:['방패병','기마병','기마병','궁수','요술사'],r:{g:'제갈량'}},
+  {id:5,n:'Xiapi',x:84,y:55,t:3,e:['방패병','방패병','기마병','궁수','궁수','요술사'],r:{g:'초선'}},
+  {id:6,n:'Wan',x:46,y:46,t:3,e:['장각','황건병','황건병','방패병','궁수','요술사'],r:{g:'황충'}},
+  {id:7,n:'Xuchang',x:78,y:34,t:4,e:['하후돈','허저','기마병','궁수','궁수','요술사'],r:{g:'곽가'}},
+  {id:8,n:"Chang'an",x:18,y:30,t:4,e:['이각','기마병','기마병','기마병','궁수','방패병'],r:{g:'마초'}},
+  {id:9,n:'Hulao Pass',x:50,y:22,t:5,e:['화웅','여포','방패병','기마병','궁수','궁수'],r:{g:'여포'}},
+  {id:10,n:'Luoyang',x:50,y:8,t:6,e:['동탁','이각','방패병','기마병','궁수','궁수','요술사'],boss:1},
+];
+const EDGES=[[0,1],[0,2],[1,3],[2,3],[2,4],[3,5],[3,6],[4,6],[6,7],[6,8],[5,7],[7,9],[8,9],[9,10]];
+const FORMS={
+  어린진:{mask:[[0,1,1,0],[1,1,1,1],[0,1,1,0]],desc:'Front row +30% attack · 2nd-row infantry also strike'},
+  학익진:{mask:[[1,1,1,1],[1,0,0,1],[0,1,1,0]],desc:'Outer columns +2 speed · +20% attack'},
+};
+const need=lv=>40+30*(lv-1);
+const cap=()=>Math.min(8,5+Math.floor((S.hero.lv-1)/2));
+
+// ---------- state ----------
+const KEY='tianxia-en-v1';
+let S=null, ui={sel:null,node:null};
+function fresh(name){return{v:1,hero:{name,lv:1,exp:0,atk:7,int:4,spd:4,hp:56},gold:30,food:3,owned:[0],
+  roster:{유비:1,관우:1,요화:1,진도:1},form:'어린진',place:{'0,1':'hero','0,2':'관우','1,1':'유비','1,2':'요화','2,1':'진도'},
+  battles:0,losses:0,hint:true,end:null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));return s&&s.v===1?s:null}catch(e){return null}}
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),1800)}
+
+// ---------- army ----------
+function unitBase(id){
+  if(id==='hero'){const h=S.hero;return{name:h.name,c:'보',atk:h.atk,hp:h.hp,spd:h.spd,int:h.int,hero:true}}
+  const d=DEFS[id],k=1+.25*((S.roster[id]||1)-1);
+  return{name:nm(id),c:d.c,atk:Math.round(d.atk*k),hp:Math.round(d.hp*k),spd:d.spd,int:Math.round((d.int||0)*k),rank:S.roster[id]};
+}
+function computeArmy(){
+  const F=FORMS[S.form],units=[];
+  for(const [k,id] of Object.entries(S.place)){
+    const [r,c]=k.split(',').map(Number); if(!F.mask[r][c])continue;
+    units.push({id,...unitBase(id),r,col:c,side:'p',m:{atk:1,hp:1,int:1}});
+  }
+  const syn=[],add=(n,d)=>{if(!syn.find(s=>s.n===n))syn.push({n,d})};
+  const has=n=>units.find(u=>u.id===n);
+  const adj=(a,b)=>Math.abs(a.r-b.r)+Math.abs(a.col-b.col)===1;
+  const nb=u=>units.filter(v=>v!==u&&adj(u,v));
+  if(S.form==='어린진'){units.forEach(u=>{if(u.r===0)u.m.atk*=1.3});add('Fish Scale',FORMS.어린진.desc)}
+  else{units.forEach(u=>{if(u.col===0||u.col===3){u.spd+=2;u.m.atk*=1.2}});add('Crane Wing',FORMS.학익진.desc)}
+  const bro=['유비','관우','장비'];
+  units.filter(u=>bro.includes(u.id)).forEach(u=>{const k=nb(u).filter(v=>bro.includes(v.id)).length;
+    if(k){u.m.atk*=1+.3*k;add('Peach Garden Oath','Sworn brothers side by side: +30% attack per brother')}});
+  const tiger=['관우','장비','조운','마초','황충'].filter(has);
+  if(tiger.length>=3){tiger.forEach(n=>{const u=has(n);u.spd+=2;if(tiger.length===5)u.m.atk*=1.3});
+    add('Five Tigers',`${tiger.length} fielded · +2 speed${tiger.length===5?' · +30% attack':''}`)}
+  if(has('유비')&&has('제갈량')){has('제갈량').m.int*=1.5;add('Fish and Water','With Liu Bei, Zhuge Liang schemes +50%')}
+  units.filter(u=>u.c==='책'&&u.r===2).forEach(s=>{
+    units.filter(v=>v.col===s.col&&v!==s).forEach(v=>v.m.atk*=1.25);add('Rear Strategist','Back-row strategist: his column +25% attack');
+    if(s.id==='제갈량'){units.forEach(v=>v.m.atk*=1.15);add('Sleeping Dragon','Zhuge Liang in back row: army +15% attack')}});
+  const lb=has('여포'),cs=has('초선'),zf=has('장비');
+  if(lb&&cs&&adj(lb,cs)){lb.m.atk*=1.5;add('Chain Scheme','Lu Bu next to Diaochan: +50% attack')}
+  if(lb&&zf){lb.m.atk*=.8;zf.m.atk*=.8;add('Rivals','Zhang Fei and Lu Bu: both −20% attack')}
+  const lv0=has('유비');
+  const hero=units.find(u=>u.hero);
+  if(hero&&nb(hero).length){nb(hero).forEach(v=>v.m.atk*=1.1);add('Comrades',`Officers next to ${S.hero.name}: +10% attack`)}
+  const near8=(a,b)=>a!==b&&Math.max(Math.abs(a.r-b.r),Math.abs(a.col-b.col))===1;
+  if(lv0){units.filter(v=>near8(lv0,v)).forEach(v=>v.m.hp*=1.15);if(units.some(v=>near8(lv0,v)))add('Benevolence','Around Liu Bei: +15% HP')}
+  const yh=has('요화');if(yh&&yh.r===0&&(yh.col===0||yh.col===3||!F.mask[0][yh.col-1]||!F.mask[0][yh.col+1])){yh.spd+=3;add('Vanguard','Liao Hua on the front edge: +3 speed')}
+  const jd=has('진도');if(jd){const cov=units.filter(v=>v.col===jd.col&&v.r<jd.r);cov.forEach(v=>v.m.hp*=1.2);if(cov.length)add('Cover','Ahead of Chen Dao in his column: +20% HP')}
+  if(has('관우'))has('관우').duel=1;
+  const zy=has('조운'),lv=has('유비');if(zy&&lv&&adj(zy,lv)){zy.m.hp*=1.4;add('Changban','Zhao Yun next to Liu Bei: +40% HP')}
+  const zc=has('주창'),gy=has('관우');if(zc&&gy&&adj(zc,gy)){gy.m.hp*=1.3;add('Blade Bearer','Guan Yu next to Zhou Cang: +30% HP')}
+  const hz=has('황충');if(hz&&hz.r===2){hz.m.atk*=1.3;add('Old Veteran','Huang Zhong in back row: +30% attack')}
+  units.forEach(u=>{u.base=u.atk;u.atk=Math.round(u.atk*u.m.atk);u.maxhp=u.hp=Math.round(u.hp*u.m.hp);u.int=Math.round(u.int*u.m.int)});
+  return{units,syn};
+}
+function enemyArmy(node){
+  const t=node.t,rows=[[],[],[]],out=[];
+  node.e.forEach((n,i)=>{const d=ENEMY[n],m=d.named?1+.14*(t-1):1+.6*Math.min(t-1,3.4);
+    let r=d.c==='보'?0:d.c==='기'?1:2;while(rows[r].length>=4)r=(r+1)%3;
+    const col=[1,2,0,3][rows[r].length];rows[r].push(i);
+    out.push({id:'e'+i,name:nm(n),c:d.c,atk:Math.round(d.atk*m),hp:Math.round(d.hp*m),maxhp:Math.round(d.hp*m),spd:d.spd,int:Math.round((d.int||0)*m),r,col,side:'e',named:d.named})});
+  return out;
+}
+
+// ---------- battle ----------
+const rnd=()=>.85+Math.random()*.3;
+const ADV=(a,b)=>(a==='보'&&b==='기')||(a==='기'&&(b==='궁'||b==='책'))||(a==='궁'&&b==='보');
+const dmg=(u,f)=>Math.round(u.atk*rnd()*(ADV(u.c,f.c)?1.4:1)*(u.duel&&f.named?1.5:1));
+function simulate(P,E,form){
+  const all=[...P,...E].map(u=>({...u})),ev=[];
+  const alive=s=>all.filter(u=>u.side===s&&u.hp>0);
+  const front=s=>Math.min(...alive(s).map(u=>u.r));
+  let win=null;
+  for(let round=1;round<=40&&win===null;round++){
+    ev.push({t:'round',n:round});
+    const order=all.filter(u=>u.hp>0).sort((a,b)=>b.spd-a.spd||(a.side==='p'?-1:1));
+    for(const u of order){
+      if(u.hp<=0)continue;
+      const os=u.side==='p'?'e':'p',foes=alive(os);if(!foes.length)break;
+      const fr=front(os),rel=u.r-front(u.side);
+      const melee=rel===0||(rel===1&&(u.c==='기'||(u.side==='p'&&form==='어린진'&&u.c==='보')));
+      let k=null,hits=[];
+      if(u.c==='책'||(u.hero&&!melee&&u.int>=8)){k='fire';const pw=u.hero?.5:.6;hits=foes.filter(f=>f.r===fr).map(f=>({f,d:Math.max(1,Math.round(u.int*pw*rnd()))}))}
+      else if(u.c==='궁'){k='arrow';const f=foes.reduce((a,b)=>a.hp<=b.hp?a:b);hits=[{f,d:dmg(u,f)}]}
+      else if(melee){k='melee';const row=foes.filter(f=>f.r===fr);const f=row.reduce((a,b)=>Math.abs(a.col-u.col)<=Math.abs(b.col-u.col)?a:b);hits=[{f,d:dmg(u,f)}]}
+      if(!k)continue;
+      hits.forEach(h=>h.f.hp=Math.max(0,h.f.hp-h.d));
+      ev.push({t:'act',src:u.id,k,hits:hits.map(h=>({id:h.f.id,d:h.d,hp:h.f.hp,max:h.f.maxhp}))});
+      if(!alive('e').length){win=true;break}
+      if(!alive('p').length){win=false;break}
+    }
+  }
+  return{win:!!win,ev};
+}
+
+// ---------- rendering helpers ----------
+function tileHTML(u,side,opts={}){
+  const st=side==='e'||opts.battle?`<b>${u.atk}</b>·${u.maxhp??u.hp}`:`A<b>${u.atk}</b> H${u.maxhp??u.hp}`;
+  const fire=u.c==='책'?`<span class="st">S<b>${u.int}</b></span>`:'';
+  const buff=u.base&&u.atk>u.base?' buff':'';
+  return `<div class="tile ${side}${u.hero?' hero':''}${buff}${opts.sel?' sel':''}" data-u="${esc(u.id)}">
+    <span class="cl">${u.hero?'H':CLS[u.c][0]}</span>${u.rank>1?`<span class="rk">${'+'.repeat(u.rank-1)}</span>`:''}
+    <span class="nm">${esc(u.name)}</span><span class="st">${st}</span>${fire}
+    ${opts.battle?`<span class="hp"><i style="width:100%"></i></span>`:''}</div>`;
+}
+function gridHTML(units,side,mask,opts={}){
+  const badge=(r,c)=>{if(!opts.adv)return'';const f=opts.adv.foes.filter(x=>x.col===c).sort((a,b)=>a.r-b.r)[0];if(!f)return'';const me=opts.adv.c;
+    return ADV(me,f.c)?'<span class="bdg up">edge</span>':ADV(f.c,me)?'<span class="bdg dn">weak</span>':''};
+  const rows=side==='e'?[2,1,0]:[0,1,2];let h='';
+  for(const r of rows)for(let c=0;c<4;c++){
+    const u=units.find(x=>x.r===r&&x.col===c),off=mask&&!mask[r][c];
+    h+=`<div class="cell${off?' off':''}${opts.target&&!off&&!u?' target':''}" data-k="${r},${c}">${!off&&side==='p'?badge(r,c):''}${u?tileHTML(u,side,{...opts,sel:opts.selId===u.id}):''}</div>`;
+  }
+  return `<div class="grid">${h}</div>`;
+}
+function statusHTML(){
+  const h=S.hero;
+  return `<div class="status"><span class="who">${esc(h.name)}</span><span class="chip">Lv <b class="num">${h.lv}</b> <span class="num">(${h.exp}/${need(h.lv)})</span></span>
+  <span class="grow"></span><span class="chip">Gold <b class="num">${S.gold}</b></span><span class="chip food" title="Supplies">${'米'.repeat(S.food)}</span></div>`;
+}
+
+// ---------- screens ----------
+function go(fn,...a){ui.screen=[fn,a];fn(...a);save();window.scrollTo(0,0)}
+function renderTitle(){
+  const old=load();
+  $('#app').innerHTML=`<div class="title"><span class="seal">陣</span>
+    <h1>Tianxia <span>Formation</span></h1>
+    <p class="muted">A nameless officer builds a formation, seizes city after city, and marches on Luoyang. Who stands next to whom decides every battle.</p>
+    <div class="field"><label class="label" for="nm">Hero name</label><input id="nm" maxlength="12" value="Nadaero" autocomplete="off"></div>
+    <button class="btn primary" id="start">New campaign</button>
+    ${old&&!old.end?`<button class="btn" id="cont">Continue · ${esc(old.hero.name)} Lv ${old.hero.lv}</button>`:''}</div>`;
+  $('#start').onclick=()=>{const n=$('#nm').value.trim()||'Nadaero';S=fresh(n);go(renderMap)};
+  if($('#cont'))$('#cont').onclick=()=>{S=old;go(renderMap)};
+}
+function openNodes(){const o=new Set();EDGES.forEach(([a,b])=>{if(S.owned.includes(a)&&!S.owned.includes(b))o.add(b);if(S.owned.includes(b)&&!S.owned.includes(a))o.add(a)});return o}
+function renderMap(){
+  const open=openNodes();
+  const lines=EDGES.map(([a,b])=>{const A=NODES[a],B=NODES[b];const lit=S.owned.includes(a)&&S.owned.includes(b);
+    return `<line x1="${A.x}" y1="${A.y*4/3}" x2="${B.x}" y2="${B.y*4/3}" class="${lit?'lit':''}"/>`}).join('');
+  const nodes=NODES.map(n=>{const cls=S.owned.includes(n.id)?'own':open.has(n.id)?'open':'lock';
+    return `<button class="node ${cls}${n.boss?' boss':''}" style="left:${n.x}%;top:${n.y}%" data-n="${n.id}" ${cls==='open'?'':'tabindex="-1"'}>
+      <span class="pin"></span><span class="nm">${n.n}</span>${n.t&&cls!=='own'?`<span class="tr">${n.boss?'Final':'Tier '+n.t}</span>`:''}</button>`}).join('');
+  $('#app').innerHTML=`${statusHTML()}
+    ${S.hint?`<div class="hint">Tap a glowing red city to attack it. Take Beihai and Zhang Fei joins you. Try placing him next to Guan Yu.</div>`:''}
+    <div class="map"><svg viewBox="0 0 100 133.3" preserveAspectRatio="none">${lines}</svg>${nodes}</div>
+    <div class="row"><button class="btn grow" id="camp">Camp · ${Object.keys(S.roster).length+1} officers</button><button class="btn" id="quit">Title</button></div>`;
+  document.querySelectorAll('.node.open').forEach(b=>b.onclick=()=>nodeSheet(NODES[+b.dataset.n]));
+  $('#camp').onclick=()=>go(renderCamp);
+  $('#quit').onclick=()=>go(renderTitle);
+}
+function sheet(html){const d=document.createElement('div');d.className='sheet';d.innerHTML=`<div class="panel">${html}</div>`;
+  d.onclick=e=>{if(e.target===d)d.remove()};document.body.appendChild(d);return d}
+function nodeSheet(node){
+  const E=enemyArmy(node),r=node.r;
+  const rw=node.boss?'All under heaven':r.g?`<b>${nm(r.g)}</b> joins`+(S.roster[r.g]?' (already yours: +1 training)':''):`${r.gold} gold`;
+  const d=sheet(`<div class="side-label"><h2>${node.n}</h2><span class="label">${node.boss?'Final battle':'Tier '+node.t}</span></div>
+    ${gridHTML(E,'e',null)}<div class="front-mark">▼ ENEMY FRONT</div>
+    <div class="info">Victory: ${rw} · ${15+10*node.t} gold · ${20+15*node.t} XP</div>
+    <div class="row"><button class="btn grow" id="x">Withdraw</button><button class="btn primary grow" id="f">Set formation</button></div>`);
+  d.querySelector('#x').onclick=()=>d.remove();
+  d.querySelector('#f').onclick=()=>{d.remove();S.hint=false;ui.sel=null;go(renderForm,node.id)};
+}
+function renderForm(nid){
+  const node=NODES[nid],F=FORMS[S.form],{units,syn}=computeArmy(),E=enemyArmy(node);
+  const placed=new Set(Object.values(S.place)),ids=['hero',...Object.keys(S.roster)];
+  const bench=ids.filter(i=>!placed.has(i)).map(i=>({id:i,...unitBase(i)}));
+  const sel=ui.sel;
+  const info=sel?(()=>{const u=units.find(x=>x.id===sel)||{id:sel,...unitBase(sel)};
+    return `<h3>${esc(u.name)} <span class="label">${u.hero?'Hero · Infantry':CLS[u.c]}</span></h3><div class="num">Attack ${u.atk} · HP ${u.maxhp??u.hp} · Speed ${u.spd}${u.int?` · Intellect ${u.int}`:''}</div><div class="muted">${HINT[sel]||''}</div>`})()
+    :`<span class="muted">Tap an officer, then an empty cell to place them. Tap a placed officer twice to send them back to reserve. The top row is your front line.</span>`;
+  $('#app').innerHTML=`${statusHTML()}
+    <div class="side-label"><h2>${node.n}</h2><span class="label">${E.length} enemy units</span></div>
+    ${gridHTML(E,'e',null)}
+    <div class="front-mark">▲ YOUR FRONT ▲</div>
+    ${gridHTML(units,'p',F.mask,{target:!!sel,selId:sel,adv:sel?{c:sel==='hero'?'보':DEFS[sel].c,foes:E}:null})}
+    <div class="seg">${Object.keys(FORMS).map(f=>`<button class="${f===S.form?'on':''}" data-f="${f}">${FN[f]}</button>`).join('')}</div>
+    <div class="label">Counters +40% · Infantry→Cavalry · Cavalry→Archers & Strategists · Archers→Infantry · Melee hits the opposite column first</div>
+    <div class="syn">${syn.map(s=>`<span><b>${s.n}</b> ${s.d}</span>`).join('')}</div>
+    <div class="side-label"><span class="label">Reserve</span><span class="label num">Deployed ${units.length}/${cap()}</span></div>
+    <div class="bench">${bench.map(u=>`<div class="cell" data-b="${esc(u.id)}">${tileHTML(u,'p',{sel:sel===u.id})}</div>`).join('')||'<span class="muted">All deployed</span>'}</div>
+    <div class="info">${info}</div>
+    <div class="row"><button class="btn" id="back">Map</button><button class="btn primary grow" id="go" ${units.length?'':'disabled'}>Deploy</button></div>`;
+  const keyOf=id=>Object.keys(S.place).find(k=>S.place[k]===id);
+  document.querySelectorAll('.grid')[1].querySelectorAll('.cell').forEach(c=>c.onclick=()=>{
+    const k=c.dataset.k,[r,cc]=k.split(',').map(Number);if(!F.mask[r][cc])return;
+    const here=S.place[k];
+    if(!sel){if(here){ui.sel=here}}
+    else if(here===sel){delete S.place[k];ui.sel=null}
+    else{const from=keyOf(sel);
+      if(!from&&!here&&Object.values(S.place).filter((v,i)=>{const [a,b]=Object.keys(S.place)[i].split(',').map(Number);return F.mask[a][b]}).length>=cap()){toast(`Command limit ${cap()}. It grows as your hero levels up.`);return}
+      if(from){if(here)S.place[from]=here;else delete S.place[from]}
+      S.place[k]=sel;ui.sel=null}
+    go(renderForm,nid)});
+  document.querySelectorAll('[data-b]').forEach(c=>c.onclick=()=>{ui.sel=ui.sel===c.dataset.b?null:c.dataset.b;go(renderForm,nid)});
+  document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{S.form=b.dataset.f;
+    for(const k of Object.keys(S.place)){const [r,c]=k.split(',').map(Number);if(!FORMS[S.form].mask[r][c])delete S.place[k]}
+    go(renderForm,nid)});
+  $('#back').onclick=()=>go(renderMap);
+  $('#go').onclick=()=>go(renderBattle,nid);
+}
+function renderBattle(nid){
+  const node=NODES[nid],{units:P}=computeArmy(),E=enemyArmy(node),res=simulate(P,E,S.form);
+  $('#app').innerHTML=`${statusHTML()}<div class="vs">
+    <div class="side-label"><h2>${node.n}</h2><span class="label" id="rd">Round 1</span></div>
+    ${gridHTML(E,'e',null,{battle:true})}<div class="log" id="log">Battle begins</div>
+    ${gridHTML(P,'p',FORMS[S.form].mask,{battle:true})}</div>
+    <div class="row"><button class="btn grow" id="spd">2× speed</button><button class="btn grow" id="skip">Skip to result</button></div>`;
+  const names=Object.fromEntries([...P,...E].map(u=>[u.id,u.name]));
+  const T=id=>document.querySelector(`.tile[data-u="${CSS.escape(id)}"]`);
+  let i=0,speed=1,timer=null,done=false;
+  const apply=(h,anim,k)=>{const t=T(h.id);if(!t)return;t.querySelector('.hp i').style.width=(100*h.hp/h.max)+'%';
+    if(h.hp<=0)t.classList.add('dead');
+    if(anim){t.classList.remove('hit');void t.offsetWidth;t.classList.add('hit');const f=document.createElement('span');f.className='dmg'+(k==='fire'?' fire':'');f.textContent='−'+h.d;t.appendChild(f);setTimeout(()=>f.remove(),700)}};
+  const finish=()=>{if(done)return;done=true;clearTimeout(timer);setTimeout(()=>result(node,res.win),speed>1?250:600)};
+  const step=()=>{
+    document.querySelectorAll('.tile.act').forEach(t=>t.classList.remove('act'));
+    if(i>=res.ev.length)return finish();
+    const e=res.ev[i++];
+    if(e.t==='round'){$('#rd').textContent='Round '+e.n;return step()}
+    const s=T(e.src);if(s)s.classList.add('act');
+    const verb={melee:'strikes',arrow:'shoots',fire:'burns'}[e.k];
+    $('#log').textContent=`${names[e.src]} ${verb} → ${e.hits.map(h=>names[h.id]+' '+h.d).join(', ')}`;
+    e.hits.forEach(h=>apply(h,true,e.k));
+    timer=setTimeout(step,520/speed)};
+  $('#spd').onclick=()=>{speed=speed>1?1:2.5;$('#spd').textContent=speed>1?'Normal speed':'2× speed'};
+  $('#skip').onclick=()=>{clearTimeout(timer);for(;i<res.ev.length;i++){const e=res.ev[i];if(e.t==='act')e.hits.forEach(h=>apply(h,false))}finish()};
+  timer=setTimeout(step,500);
+}
+function result(node,win){
+  S.battles++;
+  if(win){
+    S.owned.push(node.id);const g=15+10*node.t,x=20+15*node.t;S.gold+=g;S.hero.exp+=x;
+    let rw='';const r=node.r||{};
+    if(r.g){if(S.roster[r.g]){S.roster[r.g]=Math.min(3,S.roster[r.g]+1);rw=`${nm(r.g)} training +1`}else{S.roster[r.g]=1;rw=`${nm(r.g)} joins!`}}
+    if(r.gold){S.gold+=r.gold;rw=`${r.gold} gold`}
+    const ups=[];while(S.hero.exp>=need(S.hero.lv)){S.hero.exp-=need(S.hero.lv);S.hero.lv++;ups.push(S.hero.lv)}
+    if(node.boss){S.end='win';save();return go(renderEnd)}
+    save();
+    const d=sheet(`<h2>${node.n} taken</h2><div class="info">${rw?`<b>${rw}</b><br>`:''}+${g} gold · +${x} XP${ups.length?`<br>Level up! Command limit ${cap()}`:''}</div>
+      <button class="btn primary" id="ok">Continue</button>`);
+    d.querySelector('#ok').onclick=()=>{d.remove();ups.length?levelUp(ups.length):go(renderMap)};
+  }else{
+    S.food--;S.losses++;
+    if(S.food<=0){S.end='lose';save();return go(renderEnd)}
+    save();
+    const d=sheet(`<h2>Defeated</h2><div class="info">You lost one supply. ${S.food} left. Rework your formation or train officers at camp, then try again.</div><button class="btn primary" id="ok">Back to map</button>`);
+    d.querySelector('#ok').onclick=()=>{d.remove();go(renderMap)};
+  }
+}
+function levelUp(n){
+  const opts=[['atk',3,'Might','damage on the front line'],['int',3,'Intellect','8+ casts schemes from the back'],['spd',1,'Speed','acts sooner'],['hp',15,'Vitality','lasts longer']];
+  const d=sheet(`<h2>${esc(S.hero.name)} Lv ${S.hero.lv-n+1}</h2><p class="muted" style="margin:0">Choose one to train.</p>
+    <div class="picks">${opts.map(([k,v,l,s])=>`<button class="btn" data-k="${k}"><b>${l} +${v}</b><span class="muted">${S.hero[k]} → ${S.hero[k]+v} · ${s}</span></button>`).join('')}</div>`);
+  d.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const o=opts.find(x=>x[0]===b.dataset.k);S.hero[o[0]]+=o[1];d.remove();save();n>1?levelUp(n-1):go(renderMap)});
+  d.onclick=null;
+}
+function renderCamp(){
+  const h=S.hero;
+  const rows=Object.keys(S.roster).map(id=>{const u={id,...unitBase(id)},rk=S.roster[id],cost=25*rk;
+    return `<div class="gen"><div class="cell">${tileHTML(u,'p')}</div><div><b style="font-family:var(--display);font-weight:400;font-size:1.05rem">${nm(id)}</b> <span class="label">${CLS[u.c]} · Training ${rk}/3</span><div class="muted" style="font-size:.82rem">${HINT[id]}</div></div>
+      <button class="btn" data-up="${id}" ${rk>=3||S.gold<cost?'disabled':''}>${rk>=3?'Mastered':'Train · '+cost+'g'}</button></div>`}).join('');
+  $('#app').innerHTML=`${statusHTML()}<h2>Camp</h2>
+    <div class="gen"><div class="cell">${tileHTML({id:'hero',...unitBase('hero')},'p')}</div>
+      <div class="num">Might ${h.atk} · Intellect ${h.int} · Speed ${h.spd} · Vitality ${h.hp}<div class="muted" style="font-size:.82rem">${HINT.hero} Command limit ${cap()}.</div></div><span></span></div>
+    <span class="label">Each training level: +25% attack, HP and intellect</span><div class="list">${rows}</div>
+    <button class="btn" id="back">Back to map</button>`;
+  document.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{const id=b.dataset.up,c=25*S.roster[id];if(S.gold<c)return;S.gold-=c;S.roster[id]++;go(renderCamp)});
+  $('#back').onclick=()=>go(renderMap);
+}
+function renderEnd(){
+  const w=S.end==='win';
+  $('#app').innerHTML=`<div class="title"><span class="seal">${w?'天':'敗'}</span><h1>${w?'Luoyang is yours':'Out of supplies'}</h1>
+    <p>${w?`The name ${esc(S.hero.name)} echoes across the realm.`:`The army of ${esc(S.hero.name)} has scattered.`}</p>
+    <div class="info num">Level ${S.hero.lv} · ${S.battles} battles · ${S.losses} defeats · ${S.owned.length}/${NODES.length} cities · ${Object.keys(S.roster).length+1} officers</div>
+    <button class="btn primary" id="again">Play again</button></div>`;
+  $('#again').onclick=()=>{try{localStorage.removeItem(KEY)}catch(e){}S=null;go(renderTitle)};
+}
+
+// ---------- boot ----------
+function boot(data){
+  if(data&&data.S){S=data.S;go(renderMap)}else go(renderTitle);
+}
+window.claude?.hot?.snapshot?.(()=>({S:S&&!S.end?S:null}));
+window.claude?.hot?.ready?window.claude.hot.ready(boot):boot(window.claude?.hot?.data??{});
+</script>
+</body></html>
