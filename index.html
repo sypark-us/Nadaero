@@ -337,7 +337,7 @@ function renderMap(){
   $('#app').innerHTML=`${statusHTML()}
     ${S.hint?`<div class="hint">붉게 빛나는 고을을 눌러 공략하세요. 북해를 먹으면 장비가 합류합니다. 관우 옆에 장비를 세워 보세요.</div>`:''}
     <div class="map"><svg viewBox="0 0 100 133.3" preserveAspectRatio="none">${lines}</svg>${nodes}</div>
-    <div class="row"><button class="btn grow" id="camp">군영 · 장수 ${Object.keys(S.roster).length+1}명</button><button class="btn" id="quit">처음으로</button></div>`;
+    <div class="row"><button class="btn grow" id="camp">군영 · 금으로 단련 · 장수 ${Object.keys(S.roster).length+1}명</button><button class="btn" id="quit">처음으로</button></div>`;
   document.querySelectorAll('.node.open').forEach(b=>b.onclick=()=>nodeSheet(NODES[+b.dataset.n]));
   $('#camp').onclick=()=>go(renderCamp);
   $('#quit').onclick=()=>go(renderTitle);
@@ -452,11 +452,11 @@ function renderCamp(){
   const h=S.hero;
   const rows=Object.keys(S.roster).map(id=>{const u={id,...unitBase(id)},rk=S.roster[id],cost=25*rk;
     return `<div class="gen"><div class="cell">${tileHTML(u,'p')}</div><div><b style="font-family:var(--display);font-weight:400;font-size:1.05rem">${id}</b> <span class="label">${CLS[u.c]} · 단련 ${rk}/3</span><div class="muted" style="font-size:.82rem">${HINT[id]}</div></div>
-      <button class="btn" data-up="${id}" ${rk>=3||S.gold<cost?'disabled':''}>${rk>=3?'완성':'단련 '+cost}</button></div>`}).join('');
+      <button class="btn" data-up="${id}" ${rk>=3||S.gold<cost?'disabled':''}>${rk>=3?'완성':'단련 · '+cost+'금'}</button></div>`}).join('');
   $('#app').innerHTML=`${statusHTML()}<h2>군영</h2>
     <div class="gen"><div class="cell">${tileHTML({id:'hero',...unitBase('hero')},'p')}</div>
       <div class="num">무력 ${h.atk} · 지력 ${h.int} · 속도 ${h.spd} · 체력 ${h.hp}<div class="muted" style="font-size:.82rem">${HINT.hero} 통솔 ${cap()}명.</div></div><span></span></div>
-    <span class="label">단련하면 공격·체력·지력 +25%</span><div class="list">${rows}</div>
+    <span class="label">금으로 장수를 단련합니다 · 단련 1단계마다 공격·체력·지력 +25%</span><div class="list">${rows}</div>
     <button class="btn" id="back">지도로</button>`;
   document.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{const id=b.dataset.up,c=25*S.roster[id];if(S.gold<c)return;S.gold-=c;S.roster[id]++;go(renderCamp)});
   $('#back').onclick=()=>go(renderMap);
