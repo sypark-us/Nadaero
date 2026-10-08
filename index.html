@@ -93,6 +93,8 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .syn{display:flex;flex-wrap:wrap;gap:6px}
 .syn span{font-size:.8rem;border:1px solid var(--line);padding:3px 8px;border-radius:999px;background:var(--lacquer)}
 .syn span b{color:var(--gold);font-weight:400;font-family:var(--display)}
+.bdg{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-size:.6rem;padding:0 4px;border-radius:2px;z-index:3;pointer-events:none;white-space:nowrap}
+.bdg.up{background:var(--jade);color:var(--ink)}.bdg.dn{background:var(--seal);color:var(--paper)}
 .info{background:var(--lacquer);border:1px solid var(--line);border-radius:4px;padding:10px 12px;font-size:.88rem;min-height:3.2em}
 .info h3{font-size:1.1rem}
 .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
@@ -134,21 +136,23 @@ const DEFS={
   제갈량:{c:'책',atk:2,hp:42,spd:5,int:12},
   곽가:{c:'책',atk:2,hp:38,spd:6,int:10},
   요화:{c:'보',atk:5,hp:52,spd:4,int:2},
+  진도:{c:'궁',atk:6,hp:40,spd:5,int:2},
   주창:{c:'보',atk:6,hp:80,spd:3,int:1},
   초선:{c:'책',atk:2,hp:36,spd:6,int:7},
   여포:{c:'기',atk:17,hp:84,spd:8,int:2},
 };
 const HINT={
   hero:'주인공. 옆에 붙은 장수 공격 +10%. 지력이 8 이상이면 후열에서도 계략을 씁니다.',
-  유비:'관우·장비와 붙이면 도원결의. 제갈량과 함께 출진하면 수어지교.',
-  관우:'유비·장비 옆에서 강해집니다. 주창이 옆에 있으면 체력 +30%.',
+  유비:'인덕: 주변 8칸 아군 체력 +15%. 관우·장비와 붙이면 도원결의.',
+  관우:'일기토: 이름난 적장에게 피해 +50%. 유비·장비 옆에서 강해집니다.',
   장비:'의형제 옆에서 강해집니다. 여포와 같은 진형이면 둘 다 약해집니다.',
   조운:'기병이라 2열에서도 돌격합니다. 유비 옆이면 체력 +40% (장판파).',
   마초:'기병이라 2열에서도 돌격합니다. 오호대장군의 일원.',
   황충:'궁병. 체력이 가장 낮은 적을 저격합니다. 후열이면 공격 +30%.',
   제갈량:'책사. 적 전열 전체에 화계. 후열에 두면 전군 공격 +15% (와룡).',
   곽가:'책사. 적 전열 전체에 화계. 후열이면 같은 열 아군 공격 +25%.',
-  요화:'무난한 보병. 전열을 채워 줍니다.',
+  요화:'선봉: 전열 양 끝 칸이면 속도 +3. 먼저 쳐서 적을 줄입니다.',
+  진도:'궁병. 엄호: 같은 열 앞쪽 아군 체력 +20%. 보병에게 강합니다.',
   주창:'튼튼한 보병. 관우 옆에 두면 관우를 지킵니다.',
   초선:'책사. 여포 옆에 두면 연환계로 여포 공격 +50%.',
   여포:'최강의 기병. 초선 옆이면 공격 +50%, 장비와는 앙숙입니다.',
@@ -192,7 +196,7 @@ const cap=()=>Math.min(8,5+Math.floor((S.hero.lv-1)/2));
 const KEY='jinhyung-v1';
 let S=null, ui={sel:null,node:null};
 function fresh(name){return{v:1,hero:{name,lv:1,exp:0,atk:7,int:4,spd:4,hp:56},gold:30,food:3,owned:[0],
-  roster:{유비:1,관우:1,요화:1},form:'어린진',place:{'0,1':'hero','0,2':'관우','1,1':'유비','1,2':'요화'},
+  roster:{유비:1,관우:1,요화:1,진도:1},form:'어린진',place:{'0,1':'hero','0,2':'관우','1,1':'유비','1,2':'요화','2,1':'진도'},
   battles:0,losses:0,hint:true,end:null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));return s&&s.v===1?s:null}catch(e){return null}}
@@ -229,8 +233,14 @@ function computeArmy(){
   const lb=has('여포'),cs=has('초선'),zf=has('장비');
   if(lb&&cs&&adj(lb,cs)){lb.m.atk*=1.5;add('연환계','초선 옆의 여포 · 공격 +50%')}
   if(lb&&zf){lb.m.atk*=.8;zf.m.atk*=.8;add('숙적','장비와 여포 · 둘 다 공격 −20%')}
+  const lv0=has('유비');
   const hero=units.find(u=>u.hero);
   if(hero&&nb(hero).length){nb(hero).forEach(v=>v.m.atk*=1.1);add('동료',`${S.hero.name} 옆 장수 공격 +10%`)}
+  const near8=(a,b)=>a!==b&&Math.max(Math.abs(a.r-b.r),Math.abs(a.col-b.col))===1;
+  if(lv0){units.filter(v=>near8(lv0,v)).forEach(v=>v.m.hp*=1.15);if(units.some(v=>near8(lv0,v)))add('인덕','유비 주변 8칸 체력 +15%')}
+  const yh=has('요화');if(yh&&yh.r===0&&(yh.col===0||yh.col===3||!F.mask[0][yh.col-1]||!F.mask[0][yh.col+1])){yh.spd+=3;add('선봉','전열 끝의 요화 · 속도 +3')}
+  const jd=has('진도');if(jd){const cov=units.filter(v=>v.col===jd.col&&v.r<jd.r);cov.forEach(v=>v.m.hp*=1.2);if(cov.length)add('엄호','진도 앞쪽 같은 열 · 체력 +20%')}
+  if(has('관우'))has('관우').duel=1;
   const zy=has('조운'),lv=has('유비');if(zy&&lv&&adj(zy,lv)){zy.m.hp*=1.4;add('장판파','유비 옆의 조운 · 체력 +40%')}
   const zc=has('주창'),gy=has('관우');if(zc&&gy&&adj(zc,gy)){gy.m.hp*=1.3;add('청룡 시종','주창 옆의 관우 · 체력 +30%')}
   const hz=has('황충');if(hz&&hz.r===2){hz.m.atk*=1.3;add('노익장','후열의 황충 · 공격 +30%')}
@@ -239,7 +249,7 @@ function computeArmy(){
 }
 function enemyArmy(node){
   const t=node.t,rows=[[],[],[]],out=[];
-  node.e.forEach((n,i)=>{const d=ENEMY[n],m=d.named?1+.14*(t-1):1+.45*Math.min(t-1,3.6);
+  node.e.forEach((n,i)=>{const d=ENEMY[n],m=d.named?1+.14*(t-1):1+.6*Math.min(t-1,3.4);
     let r=d.c==='보'?0:d.c==='기'?1:2;while(rows[r].length>=4)r=(r+1)%3;
     const col=[1,2,0,3][rows[r].length];rows[r].push(i);
     out.push({id:'e'+i,name:n,c:d.c,atk:Math.round(d.atk*m),hp:Math.round(d.hp*m),maxhp:Math.round(d.hp*m),spd:d.spd,int:Math.round((d.int||0)*m),r,col,side:'e',named:d.named})});
@@ -248,6 +258,8 @@ function enemyArmy(node){
 
 // ---------- battle ----------
 const rnd=()=>.85+Math.random()*.3;
+const ADV=(a,b)=>(a==='보'&&b==='기')||(a==='기'&&(b==='궁'||b==='책'))||(a==='궁'&&b==='보');
+const dmg=(u,f)=>Math.round(u.atk*rnd()*(ADV(u.c,f.c)?1.4:1)*(u.duel&&f.named?1.5:1));
 function simulate(P,E,form){
   const all=[...P,...E].map(u=>({...u})),ev=[];
   const alive=s=>all.filter(u=>u.side===s&&u.hp>0);
@@ -263,8 +275,8 @@ function simulate(P,E,form){
       const melee=rel===0||(rel===1&&(u.c==='기'||(u.side==='p'&&form==='어린진'&&u.c==='보')));
       let k=null,hits=[];
       if(u.c==='책'||(u.hero&&!melee&&u.int>=8)){k='fire';const pw=u.hero?.5:.6;hits=foes.filter(f=>f.r===fr).map(f=>({f,d:Math.max(1,Math.round(u.int*pw*rnd()))}))}
-      else if(u.c==='궁'){k='arrow';const f=foes.reduce((a,b)=>a.hp<=b.hp?a:b);hits=[{f,d:Math.round(u.atk*rnd())}]}
-      else if(melee){k='melee';const row=foes.filter(f=>f.r===fr);const f=row.reduce((a,b)=>Math.abs(a.col-u.col)<=Math.abs(b.col-u.col)?a:b);hits=[{f,d:Math.round(u.atk*rnd())}]}
+      else if(u.c==='궁'){k='arrow';const f=foes.reduce((a,b)=>a.hp<=b.hp?a:b);hits=[{f,d:dmg(u,f)}]}
+      else if(melee){k='melee';const row=foes.filter(f=>f.r===fr);const f=row.reduce((a,b)=>Math.abs(a.col-u.col)<=Math.abs(b.col-u.col)?a:b);hits=[{f,d:dmg(u,f)}]}
       if(!k)continue;
       hits.forEach(h=>h.f.hp=Math.max(0,h.f.hp-h.d));
       ev.push({t:'act',src:u.id,k,hits:hits.map(h=>({id:h.f.id,d:h.d,hp:h.f.hp,max:h.f.maxhp}))});
@@ -286,10 +298,12 @@ function tileHTML(u,side,opts={}){
     ${opts.battle?`<span class="hp"><i style="width:100%"></i></span>`:''}</div>`;
 }
 function gridHTML(units,side,mask,opts={}){
+  const badge=(r,c)=>{if(!opts.adv)return'';const f=opts.adv.foes.filter(x=>x.col===c).sort((a,b)=>a.r-b.r)[0];if(!f)return'';const me=opts.adv.c;
+    return ADV(me,f.c)?'<span class="bdg up">유리</span>':ADV(f.c,me)?'<span class="bdg dn">불리</span>':''};
   const rows=side==='e'?[2,1,0]:[0,1,2];let h='';
   for(const r of rows)for(let c=0;c<4;c++){
     const u=units.find(x=>x.r===r&&x.col===c),off=mask&&!mask[r][c];
-    h+=`<div class="cell${off?' off':''}${opts.target&&!off&&!u?' target':''}" data-k="${r},${c}">${u?tileHTML(u,side,{...opts,sel:opts.selId===u.id}):''}</div>`;
+    h+=`<div class="cell${off?' off':''}${opts.target&&!off&&!u?' target':''}" data-k="${r},${c}">${!off&&side==='p'?badge(r,c):''}${u?tileHTML(u,side,{...opts,sel:opts.selId===u.id}):''}</div>`;
   }
   return `<div class="grid">${h}</div>`;
 }
@@ -352,8 +366,9 @@ function renderForm(nid){
     <div class="side-label"><h2>${node.n}</h2><span class="label">적 ${E.length}부대</span></div>
     ${gridHTML(E,'e',null)}
     <div class="front-mark">▲ 아군 전열 ▲</div>
-    ${gridHTML(units,'p',F.mask,{target:!!sel,selId:sel})}
+    ${gridHTML(units,'p',F.mask,{target:!!sel,selId:sel,adv:sel?{c:sel==='hero'?'보':DEFS[sel].c,foes:E}:null})}
     <div class="seg">${Object.keys(FORMS).map(f=>`<button class="${f===S.form?'on':''}" data-f="${f}">${f}</button>`).join('')}</div>
+    <div class="label">상성 +40% · 보병→기병 · 기병→궁병·책사 · 궁병→보병 · 근접은 맞은편 열을 먼저 칩니다</div>
     <div class="syn">${syn.map(s=>`<span><b>${s.n}</b> ${s.d}</span>`).join('')}</div>
     <div class="side-label"><span class="label">대기</span><span class="label num">출진 ${units.length}/${cap()}</span></div>
     <div class="bench">${bench.map(u=>`<div class="cell" data-b="${esc(u.id)}">${tileHTML(u,'p',{sel:sel===u.id})}</div>`).join('')||'<span class="muted">모두 출진</span>'}</div>
