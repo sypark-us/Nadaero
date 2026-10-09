@@ -236,6 +236,11 @@ const MI={
   군량:{d:'병량 +1 (최대 5).'},
 };
 const CARDS={
+  '선봉 명령':{cost:1,target:'ally',d:'아군 선택 · 이번 합 먼저 행동. 처치 연쇄의 시작점을 만듭니다'},
+  '집중 공격':{cost:1,target:'enemy',d:'적 선택 · 다음 아군 일반 공격 2회가 해당 적을 우선 공격'},
+  '전열 교대':{cost:1,target:'swap',d:'인접 아군 둘 선택 · 공간과 통솔을 유지하며 위치 교환'},
+  '추격 준비':{cost:1,d:'이번 합 첫 아군 공격 처치 시 인접 아군 하나가 추격'},
+  '군령 비축':{cost:1,d:'다음 합 군령 +2 (최대 4). 같은 합 중복 사용 불가'},
   화공:{cost:1,d:'적 전열에 불. 바람의 영향을 받고, 비 오면 못 씀'},
   화공선:{cost:2,d:'강 지형 전용. 적 전열과 2열에 불'},
   동남풍:{cost:1,d:'바람을 순풍으로, 3합 동안 고정'},
@@ -258,7 +263,7 @@ const SKILLS={
   화신:{d:'화계로 불을 붙일 확률 +20%',cls:['책']},
   돌파:{d:'적 2열까지 칼이 닿음',cls:['기']},
 };
-const START_DECK=['화공','화공','방패진','방패진','응급 치료','진화','일기토'];
+const START_DECK=['선봉 명령','집중 공격','전열 교대','추격 준비','군령 비축','화공','방패진','응급 치료'];
 const need=lv=>40+30*(lv-1);
 const vetNeed=lv=>30+25*lv;
 const cap=()=>Math.min(12,6+(S.hero.lv-1));
@@ -274,7 +279,7 @@ function fresh(name){return{v:2,seed:Math.floor(Math.random()*1e9),day:1,
   place:{hero:{r:0,c:1,rot:0},관우:{r:0,c:2,rot:0},유비:{r:1,c:2,rot:0},요화:{r:1,c:1,rot:0},진도:{r:2,c:2,rot:0}},
   equip:{},inv:[],mapi:['화공 수레'],deck:[...START_DECK],mods:{},march:false,shop:[],
   battles:0,losses:0,hint:true,end:null}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){if(!S)return;try{S.battle=B?JSON.parse(JSON.stringify(B)):null;localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('저장 공간을 사용할 수 없습니다')}}
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));return s&&s.v===2?s:null}catch(e){return null}}
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2000)}
 const vetOf=id=>S.vet[id]||(S.vet[id]={xp:0,lv:0,atk:0,int:0,hp:0,sk:[]});
@@ -355,6 +360,9 @@ function computeArmy(){
   if(cnt('책')>=3){units.filter(u=>u.c==='책').forEach(u=>u.m.int*=1.2);add('책사 특화','책사 3명 이상 · 계략 +20%')}
   if(['보','기','궁','책'].every(c=>cnt(c))){units.forEach(u=>u.m.atk*=1.1);add('혼성군','네 병종 모두 출진 · 전군 공격 +10%')}
   units.forEach(u=>{u.base=u.atk;u.atk=Math.round(u.atk*u.m.atk);u.maxhp=u.hp=Math.round(u.hp*u.m.hp);u.int=Math.round(u.int*u.m.int)});
+  if(units.some(a=>a.c==='보'&&units.some(b=>b.c==='궁'&&behind(a,b))))add('지원 사격','보병 처치 → 바로 뒤 궁병이 70% 공격');
+  if(units.some(a=>a.c==='기'&&units.some(b=>b.c==='기'&&adj(a,b))))add('연쇄 추격','기병 처치 → 인접 기병이 60% 공격');
+  add('연쇄 한도','한 공격당 추가 행동 최대 3회 · 각 장수 한 번');
   return{units,syn};
 }
 function enemyArmy(node){
@@ -384,7 +392,8 @@ function startBattle(node){
   if(mods.cart){const fr=front('e'),hits=[];B.units.filter(u=>u.side==='e'&&u.hp>0&&u.r===fr).forEach(u=>{const d=Math.round(u.maxhp*.3);u.hp=Math.max(1,u.hp-d);u.burn=3;hits.push({id:u.id,d,hp:u.hp,max:u.maxhp},{id:u.id,burn:1})});ev.push({t:'act',k:'fire',hits,x:'화공 수레가 적 전열을 불태웁니다'})}
   if(mods.sow){const f=alive('e').reduce((a,b)=>a.atk>=b.atk?a:b);f.stun=3;ev.push({t:'act',k:'stun',hits:[{id:f.id,stun:1}],x:`이간계: ${f.name}이(가) 3합 동안 움직이지 않습니다`})}
   delete S.mods[node.id];
-  for(let i=0;i<3;i++)drawCard();
+  B.keep=null;B.reserve=0;B.focus=null;B.focusLeft=0;B.first=null;B.chainCount=0;B.swapCount=0;
+  for(let i=0;i<4;i++)drawCard();
   return ev;
 }
 const alive=s=>B.units.filter(u=>u.side===s&&u.hp>0);
@@ -408,37 +417,62 @@ function fireAt(src,side,targets,pow,base,ev,label){
   ev.push({t:'act',src:src&&src.id,k:'fire',hits,x:label});
   if(eff(side)<0&&Math.random()<.25){const own=alive(side).filter(u=>u.r===front(side));if(own.length){const h2=[],v=pick(own);ignite(v,h2);hurt(v,pow*.4,h2,'fire');ev.push({t:'act',k:'fire',hits:h2,x:'역풍! 불길이 아군 쪽으로 번집니다'})}}
 }
+function behind(a,b){return a.r+a.h===b.r&&colOverlap(a,b)}
+function meleeTargets(u,foes){
+  const fr=Math.min(...foes.map(f=>f.r)),reach=hasSk(u,'돌파')&&u.c==='기'?1:0;
+  const dist=f=>Math.min(...colsOf(f).map(x=>Math.min(...colsOf(u).map(y=>Math.abs(x-y)))))+(f.r-fr)*.5;
+  return foes.filter(f=>f.r<=fr+reach).sort((a,b)=>dist(a)-dist(b)||a.hp-b.hp).slice(0,u.c==='기'&&u.w===2?2:1);
+}
+function arrowTarget(foes){let f=foes.reduce((a,b)=>a.hp<=b.hp?a:b);return foes.find(x=>x.h===2&&x.w===1&&x.r<f.r&&colOverlap(x,f))||f}
+function followChain(killer,killed,ev,ctx){
+  if(!killed||killer.side!=='p'||ctx.count>=3||B.over)return;
+  const friends=alive('p').filter(v=>v!==killer&&!ctx.used.has(v.id)&&!v.stun);
+  let next=friends.filter(v=>killer.c==='보'&&v.c==='궁'&&behind(killer,v));
+  if(!next.length&&killer.c==='기')next=friends.filter(v=>v.c==='기'&&adj(killer,v));
+  if(B.flags.pursuit){const extra=friends.find(v=>adj(killer,v)&&!next.includes(v));delete B.flags.pursuit;if(extra)next.push(extra)}
+  for(const u of next){if(ctx.count>=3||!alive('e').length)break;
+    if(ctx.used.has(u.id)||u.hp<=0||u.stun)continue;
+    const power=u.c==='궁'?.7:.6,label=u.c==='궁'?'지원 사격':'추격';
+    ctx.used.add(u.id);ctx.count++;B.chainCount++;
+    const foes=alive('e'),f=u.c==='궁'?arrowTarget(foes):meleeTargets(u,foes)[0],hits=[];
+    if(u.c==='궁'&&B.weather==='안개'&&Math.random()<.3){ev.push({t:'act',src:u.id,from:killer.id,k:'chain',hits,x:`연쇄 ${ctx.count}/3 · ${u.name}의 지원 사격이 안개 속에 빗나감`});continue}
+    const old=f.hp;hurt(f,u.atk*power*rnd()*(ADV(u.c,f.c)?1.4:1)*terMult(u)*(u.c==='궁'&&B.weather==='비'?.7:1)*(u.c==='궁'&&f.shield?.6:1),hits,'chain');
+    ev.push({t:'act',src:u.id,from:killer.id,k:'chain',hits,x:`연쇄 ${ctx.count}/3 · ${killer.name} → ${u.name}: ${label}`});
+    followChain(u,old>0&&f.hp<=0,ev,ctx);
+  }
+}
 function act(u,ev){
   const os=u.side==='p'?'e':'p';let foes=alive(os);if(!foes.length)return;
+  const before=new Set(foes.map(f=>f.id));
+  const chain=()=>{const killed=B.units.some(f=>before.has(f.id)&&f.hp<=0);followChain(u,killed,ev,{count:0,used:new Set([u.id])})};
+  const focus=u.side==='p'&&B.focusLeft>0?foes.find(f=>f.id===B.focus):null;
   const fr=front(os),rel=u.r-front(u.side);
   const melee=rel===0||(rel===1&&((u.c==='기'&&B.ter!=='강')||(u.side==='p'&&S.form==='어린진'&&u.c==='보')));
   const scheme=u.c==='책'||(!melee&&(u.book||(u.hero&&u.int>=8)));
   if(scheme){fireAt(u,u.side,foes.filter(f=>f.r===fr),u.int*(u.c==='책'?.6:.5),.2,ev,`${u.name}의 화계`);return}
   if(u.c==='궁'||(!melee&&u.bow)){
+    if(focus)B.focusLeft--;
     const shots=hasSk(u,'연사')&&Math.random()<.25?2:1;
     for(let s=0;s<shots;s++){foes=alive(os);if(!foes.length)return;
-      let f=foes.reduce((a,b)=>a.hp<=b.hp?a:b);
-      const g=foes.find(x=>x.h===2&&x.w===1&&x.r<f.r&&colOverlap(x,f));if(g)f=g;
+      let f=(focus&&focus.hp>0?focus:null)||arrowTarget(foes);
       const hits=[];
       if(B.weather==='안개'&&Math.random()<.3){ev.push({t:'act',src:u.id,k:'arrow',hits,x:`${u.name}의 화살이 안개 속에 빗나감`});continue}
       hurt(f,u.atk*(u.c==='궁'?1:.7)*rnd()*(ADV(u.c,f.c)?1.4:1)*terMult(u)*(B.weather==='비'?.7:1)*(f.shield?.6:1),hits,'arrow');
       ev.push({t:'act',src:u.id,k:'arrow',hits,x:`${u.name}의 ${s?'연사':'저격'}`})}
-    return}
+    chain();return}
   if(!melee)return;
-  const reach=hasSk(u,'돌파')&&u.c==='기'?1:0;
-  const row=foes.filter(f=>f.r<=fr+reach);
-  const dist=f=>Math.min(...colsOf(f).map(x=>Math.min(...colsOf(u).map(y=>Math.abs(x-y)))))+(f.r-fr)*.5;
-  const sorted=[...row].sort((a,b)=>dist(a)-dist(b)||a.hp-b.hp);
+  if(focus)B.focusLeft--;
+  const sorted=focus?[focus]:meleeTargets(u,foes);
   const n=u.c==='기'&&u.w===2?2:1,hits=[];
   sorted.slice(0,n).forEach(f=>hurt(f,u.atk*rnd()*(ADV(u.c,f.c)?1.4:1)*(u.duel&&f.named?1.5:1)*terMult(u),hits,'melee'));
-  ev.push({t:'act',src:u.id,k:'melee',hits,x:`${u.name}의 ${n>1?'횡격':'공격'}`});
+  ev.push({t:'act',src:u.id,k:'melee',hits,x:`${u.name}의 ${n>1?'횡격':'공격'}`});chain();
 }
 function runRound(){
   const ev=[];B.round++;
   if(B.round>=4&&B.round>B.lock){const p=Math.min(.4,.1+.05*(B.round-4));
     if(Math.random()<p){const old=B.wind;B.wind=B.wind!==0?0:pick([1,-1]);ev.push({t:'note',x:`바람이 바뀝니다: ${WIND[old]} → ${WIND[B.wind]}`})}}
   ev.push({t:'round'});
-  const order=B.units.filter(u=>u.hp>0).sort((a,b)=>b.spd-a.spd||(a.side==='p'?-1:1));
+  const order=B.units.filter(u=>u.hp>0).sort((a,b)=>Number(b.id===B.first)-Number(a.id===B.first)||b.spd-a.spd||(a.side===b.side?0:a.side==='p'?-1:1));
   for(const u of order){
     if(u.hp<=0||B.over)continue;
     if(u.stun>0){u.stun--;ev.push({t:'act',src:u.id,k:'stun',hits:[],x:`${u.name}은(는) 움직이지 못함`});continue}
@@ -454,22 +488,44 @@ function runRound(){
       u.burn--;if(!u.burn)hits.push({id:u.id,burn:-1})});
     if(hits.length)ev.push({t:'act',k:'fire',hits,x:'불길'});
     check()}
-  B.flags={};B.cmd=2;
+  B.flags={};B.cmd=Math.min(4,2+(B.reserve||0));B.reserve=0;B.first=null;B.focus=null;B.focusLeft=0;
   if(!B.over&&B.round>=30){B.over='lose';ev.push({t:'note',x:'30합이 지나 군량이 바닥났습니다'})}
-  if(!B.over)drawCard();
+  if(!B.over){const held=B.keep!=null?B.hand[B.keep]:null;B.disc.push(...B.hand.filter((_,i)=>i!==B.keep));B.hand=held?[held]:[];B.keep=null;while(B.hand.length<4&&(B.draw.length||B.disc.length))drawCard()}
+  save();
   return ev;
 }
 function check(){if(B.over)return;if(!alive('e').length)B.over='win';else if(!alive('p').length)B.over='lose'}
-function canPlay(c){const k=CARDS[c];if(k.cost>B.cmd||B.over)return false;
+function canPlay(c){const k=CARDS[c];
+  if(c==='군령 비축'&&B.reserve)return false;
+  if(c==='전열 교대'&&!swapPairs().length)return false;
+  if(c==='선봉 명령'&&!alive('p').some(u=>!u.stun))return false;if(k.cost>B.cmd||B.over)return false;
   if((c==='화공'||c==='화공선')&&B.weather==='비')return false;
   if(c==='화공선'&&B.ter!=='강')return false;
   if(c==='돌격 명령'&&!alive('p').some(u=>u.c==='기'))return false;
   return true}
-function playCard(i){
-  const c=B.hand[i];if(!canPlay(c))return[];
-  B.cmd-=CARDS[c].cost;B.hand.splice(i,1);B.disc.push(c);
+function swappedPlaces(a,b){
+  if(!adj(a,b))return null;
+  const places=JSON.parse(JSON.stringify(S.place)),pa=places[a.id],pb=places[b.id];
+  if(!pa||!pb)return null;
+  places[a.id]={...pa,r:pb.r,c:pb.c};places[b.id]={...pb,r:pa.r,c:pa.c};
+  const occ={};for(const [id,p] of Object.entries(places)){if(!fits(id,p.r,p.c,p.rot))return null;
+    const [w,h]=dims(id,p.rot);for(const [r,c] of cellsAt(p.r,p.c,w,h)){if(occ[r+','+c])return null;occ[r+','+c]=id}}
+  return places;
+}
+function swapPairs(){const a=alive('p'),out=[];for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)if(swappedPlaces(a[i],a[j]))out.push([a[i],a[j]]);return out}
+function playCard(i,target){
+  const c=B.hand[i];if(!c||!canPlay(c))return[];
+  if(CARDS[c].target==='ally'&&!alive('p').some(u=>u.id===target&&!u.stun))return[];
+  if(CARDS[c].target==='enemy'&&!alive('e').some(u=>u.id===target))return[];
+  let places=null;if(CARDS[c].target==='swap'){const pair=swapPairs().find(p=>p.map(u=>u.id).join('|')===target);if(!pair)return[];places=swappedPlaces(...pair)}
+  B.cmd-=CARDS[c].cost;if(B.keep===i)B.keep=null;else if(B.keep!=null&&B.keep>i)B.keep--;B.hand.splice(i,1);B.disc.push(c);
   const ev=[],foes=alive('e'),fr=foes.length?front('e'):0,pw=10+3*B.lv,hits=[];
-  if(c==='화공')fireAt(null,'p',foes.filter(f=>f.r===fr),pw,.5,ev,'화공!');
+  if(c==='선봉 명령'){B.first=target;ev.push({t:'note',x:alive('p').find(u=>u.id===target).name+' 선봉! 이번 합 먼저 행동'})}
+  else if(c==='집중 공격'){B.focus=target;B.focusLeft=2;ev.push({t:'note',x:'집중 공격! 다음 아군 일반 공격 2회가 지정한 적을 노립니다'})}
+  else if(c==='전열 교대'){S.place=places;const stats=computeArmy().units;for(const u of B.units.filter(u=>u.side==='p')){const n=stats.find(v=>v.id===u.id),hp=u.hp/u.maxhp;Object.assign(u,{r:n.r,col:n.col,w:n.w,h:n.h,atk:n.atk,int:n.int,spd:n.spd,maxhp:n.maxhp});u.hp=Math.max(1,Math.round(hp*u.maxhp))}B.swapCount++;ev.push({t:'note',x:'전열 교대! 배치 시너지 재계산 · 남은 체력 비율 유지'})}
+  else if(c==='추격 준비'){B.flags.pursuit=1;ev.push({t:'note',x:'다음 아군 공격 처치 시 인접 장수가 추격합니다'})}
+  else if(c==='군령 비축'){B.reserve=2;ev.push({t:'note',x:'군령 비축! 다음 합 군령 4'})}
+  else if(c==='화공')fireAt(null,'p',foes.filter(f=>f.r===fr),pw,.5,ev,'화공!');
   else if(c==='화공선')fireAt(null,'p',foes.filter(f=>f.r===fr||f.r===fr+1),pw*1.1,.6,ev,'화공선!');
   else if(c==='동남풍'){B.wind=1;B.lock=B.round+3;ev.push({t:'note',x:'동남풍이 붑니다. 3합 동안 순풍'})}
   else if(c==='돌격 명령'){B.flags.charge=1;ev.push({t:'note',x:'돌격! 이번 합 기병이 두 번 공격'})}
@@ -481,7 +537,7 @@ function playCard(i){
   else if(c==='일기토'){const me=alive('p').filter(u=>u.c!=='책').sort((a,b)=>b.atk-a.atk)[0];if(me&&foes.length){const f=foes.reduce((a,b)=>a.atk>=b.atk?a:b);hurt(f,me.atk*2*rnd(),hits,'melee');ev.push({t:'act',src:me.id,k:'melee',hits,x:`${me.name}과(와) ${f.name}의 일기토`})}}
   else if(c==='미인계'){if(foes.length){const f=foes.reduce((a,b)=>a.atk>=b.atk?a:b);f.stun=Math.max(f.stun,2);ev.push({t:'act',k:'stun',hits:[{id:f.id,stun:1}],x:`미인계: ${f.name}이(가) 2합 동안 넋을 잃습니다`})}}
   else if(c==='장판교 고함'){foes.filter(f=>f.r===fr).forEach(f=>{f.stun=Math.max(f.stun,1);hits.push({id:f.id,stun:1})});ev.push({t:'act',k:'stun',hits,x:'장판교의 고함! 적 전열이 얼어붙습니다'})}
-  check();
+  check();save();
   return ev;
 }
 
@@ -526,7 +582,7 @@ function renderTitle(){
     <button class="btn primary" id="start">새로 시작</button>
     ${old&&!old.end?`<button class="btn" id="cont">이어하기 · ${esc(old.hero.name)} Lv ${old.hero.lv}</button>`:''}</div>`;
   $('#start').onclick=()=>{S=fresh($('#nm').value.trim()||'나대로');refreshShop();go(renderMap)};
-  if($('#cont'))$('#cont').onclick=()=>{S=old;go(renderMap)};
+  if($('#cont'))$('#cont').onclick=()=>{S=old;resume()};
 }
 function nbrs(id){return EDGES.filter(e=>e.includes(id)).map(e=>e[0]===id?e[1]:e[0])}
 function openNodes(){const o=new Set();S.owned.forEach(a=>nbrs(a).forEach(b=>{if(!S.owned.includes(b))o.add(b)}));return o}
@@ -622,36 +678,57 @@ function renderForm(nid){
   $('#go').onclick=()=>{if(!openNodes().has(nid))S.march=false;S.battles++;save();renderBattle(nid)};
 }
 
+function enemyIntent(){
+  const foes=alive('p');if(!foes.length)return ['아군이 없습니다'];
+  return alive('e').sort((a,b)=>b.spd-a.spd).map(u=>{
+    if(u.stun)return `${u.name}: 행동 불가 (${u.stun}합)`;
+    const rel=u.r-front('e'),melee=rel===0||(rel===1&&u.c==='기'&&B.ter!=='강');
+    if(u.c==='책')return `${u.name}: 아군 전열 전체 화계${B.weather==='비'?' (비 · 위력 감소)':''}`;
+    if(u.c==='궁')return `${u.name}: ${arrowTarget(foes).name} 저격${B.weather==='안개'?' (명중 70%)':''}`;
+    if(!melee)return `${u.name}: 후열 대기`;
+    return `${u.name}: ${meleeTargets(u,foes).map(f=>f.name).join('·')} 공격`;
+  });
+}
 // ---------- battle screen ----------
-function renderBattle(nid){
-  const node=NODES[nid],pre=startBattle(node);
+function renderBattle(nid,resumed=false){
+  const node=NODES[nid],pre=resumed?[]:startBattle(node);save();
   const P=B.units.filter(u=>u.side==='p'),E=B.units.filter(u=>u.side==='e');
   $('#app').innerHTML=`${statusHTML()}<div class="vs">
     <div class="side-label"><h2>${node.n}</h2><span class="label" id="rd">준비</span></div>
-    <div class="cond" id="cnd"></div>
+    <div class="cond" id="cnd"></div><div class="info" id="intent" aria-live="polite"></div>
     ${gridHTML(E,'e',null,{battle:true})}<div class="log" id="log">카드를 내고 「합 진행」을 누르세요</div>
     ${gridHTML(P,'p',maskOf(),{battle:true})}</div>
     <div class="side-label"><span class="label">계책 · 군령 <span class="cmd" id="cmd"></span></span><span class="label num" id="pile"></span></div>
-    <div class="hand" id="hand"></div>
+    <div class="hint">매 합 손패 4장 · 한 장을 보관하면 나머지는 버립니다. 대상 카드는 선택 후 사용합니다.</div>
+    <div class="hand" id="hand"></div><div class="info" id="target" hidden></div>
     <div class="row"><button class="btn primary grow" id="next">합 진행</button><button class="btn" id="auto">자동</button><button class="btn" id="skip">결과</button></div>`;
   const names=Object.fromEntries(B.units.map(u=>[u.id,u.name]));
   const T=id=>document.querySelector(`.tile[data-u="${CSS.escape(id)}"]`);
-  let queue=[...pre],busy=false,speed=1,timer=null,done=false;
+  let queue=[...pre],busy=false,speed=1,timer=null,done=false,pendingCard=null;
   const sync=()=>{B.units.forEach(u=>{const t=T(u.id);if(!t)return;t.querySelector('.hp i').style.width=(100*u.hp/u.maxhp)+'%';
     t.classList.toggle('dead',u.hp<=0);t.classList.toggle('burn',u.hp>0&&u.burn>0);t.classList.toggle('stun',u.hp>0&&u.stun>0)})};
   const head=()=>{const nx=B.round+1,p=nx>=4&&nx>B.lock?Math.round(100*Math.min(.4,.1+.05*(nx-4))):0;
     $('#rd').textContent=B.round?B.round+'합':'준비';
     $('#cnd').innerHTML=`<span>${B.ter}</span><span class="${B.weather==='비'?'bad':''}">${B.weather}</span><span class="${B.wind>0?'good':B.wind<0?'bad':''}">${WIND[B.wind]}</span><span>${p?`다음 합 바람 변화 ${p}%`:`바람 고정 ${Math.max(1,Math.max(B.lock,3)-B.round)}합`}</span>`;
-    $('#cmd').textContent='◆'.repeat(B.cmd)+'◇'.repeat(Math.max(0,2-B.cmd));
+    $('#cmd').textContent='◆'.repeat(B.cmd)+'◇'.repeat(Math.max(0,4-B.cmd));
     $('#pile').textContent=`덱 ${B.draw.length} · 버림 ${B.disc.length}`;
-    $('#hand').innerHTML=B.hand.map((c,i)=>`<button class="card" data-i="${i}" ${canPlay(c)&&!busy?'':'disabled'}><span class="cost">군령 ${CARDS[c].cost}</span><b>${c}</b><small>${CARDS[c].d}</small></button>`).join('')||'<span class="muted">손에 카드가 없습니다</span>';
-    document.querySelectorAll('.card').forEach(b=>b.onclick=()=>{if(busy)return;queue.push(...playCard(+b.dataset.i));play()});
+    $('#intent').innerHTML=`<b>다음 합 적 행동</b><div class="muted">${enemyIntent().map(esc).join('<br>')}</div><div class="label">현재 배치 기준 · 앞선 처치·교대에 따라 대상 변경 · 연쇄 ${B.chainCount||0}회</div>`;
+    $('#hand').innerHTML=B.hand.map((c,i)=>`<div><button class="card" data-i="${i}" ${canPlay(c)&&!busy?'':'disabled'}><span class="cost">군령 ${CARDS[c].cost}</span><b>${c}</b><small>${CARDS[c].d}</small></button><button class="btn sm" data-keep="${i}" ${busy?'disabled':''} aria-pressed="${B.keep===i}">${B.keep===i?'✓ 보관':'보관'}</button></div>`).join('')||'<span class="muted">손에 카드가 없습니다</span>';
+    document.querySelectorAll('[data-keep]').forEach(b=>b.onclick=()=>{if(busy)return;B.keep=B.keep===+b.dataset.keep?null:+b.dataset.keep;save();head()});
+    document.querySelectorAll('.card').forEach(b=>b.onclick=()=>{if(busy)return;const i=+b.dataset.i,c=B.hand[i];
+      if(!CARDS[c].target){pendingCard=null;$('#target').hidden=true;use(i);return}
+      pendingCard=i;const options=CARDS[c].target==='swap'?swapPairs().map(p=>({id:p.map(u=>u.id).join('|'),name:p.map(u=>u.name).join(' ↔ ')})):(CARDS[c].target==='ally'?alive('p').filter(u=>!u.stun):alive('e'));
+      $('#target').hidden=false;$('#target').innerHTML=`<b>${c} · 대상 선택</b><div class="row">${options.map(u=>`<button class="btn sm" data-target="${esc(u.id)}">${esc(u.name)}</button>`).join('')}<button class="btn sm" id="cancel-card">취소</button></div>`;
+      $('#cancel-card').onclick=()=>{pendingCard=null;$('#target').hidden=true};
+      document.querySelectorAll('[data-target]').forEach(t=>t.onclick=()=>{const i=pendingCard;pendingCard=null;$('#target').hidden=true;use(i,t.dataset.target)})});
     $('#next').disabled=busy||!!B.over;$('#auto').classList.toggle('on',B.auto)};
+  const use=(i,target)=>{if(busy||i==null)return;const ev=playCard(i,target);
+    const pg=document.querySelectorAll('.grid')[1];pg.outerHTML=gridHTML(B.units.filter(u=>u.side==='p'),'p',maskOf(),{battle:true});queue.push(...ev);play()};
   const show=e=>{
     document.querySelectorAll('.tile.act').forEach(t=>t.classList.remove('act'));
     if(e.t==='round'){head();return 0}
     if(e.t==='note'){$('#log').textContent=e.x;return 1}
-    const s=e.src&&T(e.src);if(s)s.classList.add('act');
+    const s=e.src&&T(e.src);if(s)s.classList.add('act');if(e.from){const from=T(e.from);if(from)from.classList.add('act')}
     const dm=e.hits.filter(h=>h.d);
     $('#log').textContent=(e.x||'')+(dm.length?' → '+dm.map(h=>names[h.id]+(h.heal?' +':' ')+h.d).join(', '):'');
     e.hits.forEach(h=>{const t=T(h.id);if(!t)return;
@@ -666,9 +743,9 @@ function renderBattle(nid){
       const w=show(queue.shift());timer=setTimeout(step,w?480/speed:0)};
     step()};
   const finish=()=>{if(done)return;done=true;clearTimeout(timer);const win=B.over==='win',surv=alive('p').map(u=>u.id);setTimeout(()=>result(node,win,surv),500)};
-  $('#next').onclick=()=>{if(busy||B.over)return;queue.push(...runRound());play()};
-  $('#auto').onclick=()=>{B.auto=!B.auto;speed=B.auto?2:1;head();if(B.auto&&!busy&&!B.over){queue.push(...runRound());play()}};
-  $('#skip').onclick=()=>{clearTimeout(timer);queue=[];let g=0;while(!B.over&&g++<40)runRound();busy=false;sync();head();finish()};
+  $('#next').onclick=()=>{if(busy||B.over)return;pendingCard=null;$('#target').hidden=true;queue.push(...runRound());play()};
+  $('#auto').onclick=()=>{pendingCard=null;$('#target').hidden=true;B.auto=!B.auto;speed=B.auto?2:1;head();if(B.auto&&!busy&&!B.over){queue.push(...runRound());play()}};
+  $('#skip').onclick=()=>{pendingCard=null;$('#target').hidden=true;clearTimeout(timer);queue=[];let g=0;while(!B.over&&g++<40)runRound();busy=false;sync();head();finish()};
   head();play();
 }
 
@@ -679,7 +756,7 @@ function lootOptions(){return [{k:'eq',n:pick(EQ_POOL())},{k:'mi',n:pick(Object.
 function grant(o){if(o.k==='eq')S.inv.push(o.n);else if(o.k==='mi')S.mapi.push(o.n);else S.deck.push(o.n)}
 const optHTML=o=>`<b>${o.n}</b><span class="label">${o.k==='eq'?'장비':o.k==='mi'?'지도 아이템':'계책 카드 · 군령 '+CARDS[o.n].cost}</span><span class="muted" style="font-size:.8rem">${o.k==='eq'?EQ[o.n].d:o.k==='mi'?MI[o.n].d:CARDS[o.n].d}</span>`;
 function result(node,win,surv){
-  B=null;
+  S.lastChain=B?B.chainCount||0:0;B=null;S.battle=null;
   if(win){
     S.owned.push(node.id);const g=15+10*node.t,x=20+15*node.t;S.gold+=g;S.hero.exp+=x;
     let rw='';const r=node.r||{};
@@ -693,15 +770,8 @@ function result(node,win,surv){
     surv.filter(id=>id!=='hero').forEach(id=>{const v=vetOf(id);v.xp+=vx;while(v.xp>=vetNeed(v.lv)){v.xp-=vetNeed(v.lv);v.lv++;vets.push(id)}});
     const ups=[];while(S.hero.exp>=need(S.hero.lv)){S.hero.exp-=need(S.hero.lv);S.hero.lv++;ups.push(S.hero.lv)}
     if(node.boss){S.end='win';save();return go(renderEnd)}
-    save();
-    const opts=lootOptions();
-    const steps=[...ups.map((_,i)=>cont=>levelUp(ups.length-i,cont)),...vets.map(id=>cont=>vetUp(id,cont))];
-    const next=()=>{save();const f=steps.shift();f?f(next):go(renderMap)};
-    const d=sheet(`<h2>${node.n} 함락</h2><div class="info">${rw?`<b>${rw}</b><br>`:''}금 +${g} · 경험 +${x}${ups.length?`<br>레벨 업! 통솔 ${cap()}`:''}<br>살아남은 장수 ${surv.filter(i=>i!=='hero').length}명 전공 +${vx}${vets.length?` · 승급: ${vets.join(', ')}`:''}</div>
-      <span class="label">전리품 하나를 고르세요</span><div class="list">${opts.map((o,i)=>`<button class="btn opt" data-o="${i}">${optHTML(o)}</button>`).join('')}</div>
-      <button class="btn" id="none">고르지 않음</button>`,false);
-    d.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{grant(opts[+b.dataset.o]);d.remove();next()});
-    d.querySelector('#none').onclick=()=>{d.remove();next()};
+    S.pending={opts:lootOptions(),loot:true,ups:ups.length,vets:[...vets],title:node.n+' 함락',summary:`${rw?rw+' · ':''}금 +${g} · 경험 +${x} · 연쇄 ${S.lastChain||0}회`};
+    save();resumeRewards();
   }else{
     S.food--;S.losses++;
     surv.filter(id=>id!=='hero').forEach(id=>{vetOf(id).xp+=5});
@@ -710,6 +780,14 @@ function result(node,win,surv){
     const d=sheet(`<h2>패퇴</h2><div class="info">병량을 하나 잃었습니다. 남은 병량 ${S.food}. 날씨를 기다리거나, 진형을 바꾸거나, 군영에서 장수를 단련해 다시 도전하세요.</div><button class="btn primary" id="ok">지도로</button>`,false);
     d.querySelector('#ok').onclick=()=>{d.remove();go(renderMap)};
   }
+}
+function resumeRewards(){
+  const q=S.pending;if(!q)return;
+  if(q.loot){const d=sheet(`<h2>${q.title}</h2><div class="info">${q.summary}</div><span class="label">전리품 하나 선택</span><div class="list">${q.opts.map((o,i)=>`<button class="btn opt" data-o="${i}">${optHTML(o)}</button>`).join('')}</div><button class="btn" id="none">고르지 않음</button>`,false);
+    const next=()=>{q.loot=false;d.remove();save();resumeRewards()};d.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{grant(q.opts[+b.dataset.o]);next()});d.querySelector('#none').onclick=next;return}
+  if(q.ups){levelUp(q.ups,()=>{q.ups--;save();resumeRewards()});return}
+  if(q.vets.length){vetUp(q.vets[0],()=>{q.vets.shift();save();resumeRewards()});return}
+  delete S.pending;go(renderMap);
 }
 function levelUp(n,cont){
   const opts=[['atk',3,'무력','전열에서 주는 피해'],['int',3,'지력','8 이상이면 후열 계략'],['spd',1,'속도','먼저 행동'],['hp',15,'체력','오래 버팀']];
@@ -775,8 +853,13 @@ function renderEnd(){
 }
 
 // ---------- boot ----------
-function boot(data){if(data&&data.S){S=data.S;go(renderMap)}else go(renderTitle)}
+function resume(){
+  if(S.battle){B=S.battle;return renderBattle(B.node.id,true)}
+  go(renderMap);if(S.pending)resumeRewards();
+}
+function boot(data){if(data&&data.S){S=data.S;resume()}else go(renderTitle)}
 window.claude?.hot?.snapshot?.(()=>({S:S&&!S.end&&!B?S:null}));
 window.claude?.hot?.ready?window.claude.hot.ready(boot):boot(window.claude?.hot?.data??{});
 </script>
 </body></html>
+
